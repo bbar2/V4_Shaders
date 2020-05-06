@@ -319,7 +319,7 @@ private:    // methods
 		if (!enable_validation_layers) return;
 
 		// create_info struct defines when to call my CallBack, and where my callback is.
-		VkDebugUtilsMessengerCreateInfoEXT create_info = {};
+		VkDebugUtilsMessengerCreateInfoEXT  create_info = {};
 		populateDebugMessengerCreateInfo(create_info);
 
 		if (createDebugUtilsMessengerEXT(
