@@ -19,9 +19,10 @@ Although this seemed to work, at run time, I received validation layer errors, s
     Basically create your own *.conf file with the path, then run ldconfig.
 
     Here is what I did:
+    ```sh
     sudo cd /etc/ld.so.conf.d
     sudo vim vulkan_sdk_path.conf !make up a name that ends in .conf
-
+    ```
     Add the following line to the new vulkan_sdk_path.conf file
     /home/barry/Vulkan/1.2.131.2/x86_64/lib !of course use your SDK path
 
