@@ -3,9 +3,9 @@
 
 Vulkan tutorial project based on Tutorial by Alexandar Overvoorde.
 
-Development environmnet:
+Development environment:
 
-Linux Ubunto 19.10 eoan
+Linux Ubuntu 20.04 focal
 
 CLion 2020.1 IDE with CMake 3.13.4 build system
 

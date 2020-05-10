@@ -26,7 +26,7 @@ link_libraries(vulkan)
 
 add_executable(${VULKAN_PROJECT_NAME} main.cpp)
 
-# this seems to do it all, but seems overly complex.
+# Manage shader compilation - seems overly complex.
 # -- add_custom_command: OUTPUT variety to create xxx.spv file dependent on the shader.xxx files
 # -- add_custom_target: new target dependent on xxx.spv files
 # -- add_dependencies: to associate my_shaders target with main ${VULCAN_PROJECT_NAME} target
@@ -48,9 +48,11 @@ compile_shader(frag)
 add_custom_target(my_shaders DEPENDS ${SPV_FILES})
 add_dependencies(${VULKAN_PROJECT_NAME} my_shaders)
 
-# Look at some built-in vars
+# Look at some vars
 message(CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR})
 message(CMAKE_BINARY_DIR: ${CMAKE_BINARY_DIR})
 message(CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME})
 message(CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE})
-message(SHADER_SOURCE_FILES: ${SHADER_SOURCE_FILES})
+foreach(file ${SPV_FILES})
+    message(SPV_FILE: ${file})
+endforeach()
