@@ -136,6 +136,10 @@ private:  // members
 	VkPipelineLayout m_pipeline_layout;
 	VkPipeline       m_graphics_pipeline;
 
+	vector<VkFramebuffer> m_swap_chain_framebuffers;
+
+	VkCommandPool m_command_pool;
+
 public:   // Methods
 
 	/// constructor -
@@ -191,6 +195,8 @@ private:    // methods
 		createImageViews();
 		createRenderPass();
 		createGraphicsPipeline();
+		createFramebuffers();
+		createCommandPool();
 	}
 
 	void mainLoop() {
@@ -200,6 +206,12 @@ private:    // methods
 	}
 
 	void cleanup(){
+
+		vkDestroyCommandPool(m_logical_device, m_command_pool, nullptr);
+
+		for (auto framebuffer :  m_swap_chain_framebuffers) {
+			vkDestroyFramebuffer(m_logical_device, framebuffer, nullptr);
+		}
 
 		vkDestroyPipeline(m_logical_device, m_graphics_pipeline, nullptr);
 		vkDestroyPipelineLayout(m_logical_device, m_pipeline_layout, nullptr);
@@ -591,10 +603,7 @@ private:    // methods
 		for (size_t i = 0; i < num_swap_chain_images; i++) {
 			create_info.image = m_swap_chain_images[i];
 
-			if (vkCreateImageView(
-					m_logical_device,
-					&create_info,
-					nullptr,
+			if (vkCreateImageView(m_logical_device, &create_info, nullptr,
 					&m_swap_chain_image_views[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create image views!");
 			}
@@ -765,10 +774,7 @@ private:    // methods
 		pipeline_layout_info.pushConstantRangeCount = 0;       // optional
 		pipeline_layout_info.pPushConstantRanges    = nullptr; // optional
 
-		if (vkCreatePipelineLayout(
-				m_logical_device,
-				&pipeline_layout_info,
-				nullptr,
+		if (vkCreatePipelineLayout(m_logical_device, &pipeline_layout_info,nullptr,
 				&m_pipeline_layout) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!");
 		}
@@ -791,19 +797,51 @@ private:    // methods
 		pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
 		pipeline_info.basePipelineIndex  = -1;
 
-		if (vkCreateGraphicsPipelines(
-				m_logical_device,
-				VK_NULL_HANDLE,
-				1,
-				&pipeline_info,
-				nullptr,
-				&m_graphics_pipeline) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(m_logical_device, VK_NULL_HANDLE, 1,
+				&pipeline_info, nullptr, &m_graphics_pipeline) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
 
 		// VkShaderModule no longer required after pipeline created
 		vkDestroyShaderModule(m_logical_device, frag_shader_module, nullptr);
 		vkDestroyShaderModule(m_logical_device, vert_shader_module, nullptr);
+	}
+
+	void createFramebuffers(){
+		m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
+
+		for (size_t i = 0; i < m_swap_chain_image_views.size(); i++) {
+			VkImageView attachments[] = {m_swap_chain_image_views[i]}; // array of one?
+
+			VkFramebufferCreateInfo frame_buffer_info = {};
+			frame_buffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			frame_buffer_info.renderPass = m_render_pass;
+			frame_buffer_info.attachmentCount = 1;
+			frame_buffer_info.pAttachments = attachments;
+			frame_buffer_info.width  = m_swap_chain_extent.width;
+			frame_buffer_info.height = m_swap_chain_extent.height;
+			frame_buffer_info.layers = 1;
+
+			if (vkCreateFramebuffer(m_logical_device, &frame_buffer_info, nullptr,
+					&m_swap_chain_framebuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create framebuffer!");
+			}
+
+		}
+	}
+
+	void createCommandPool(){
+		QueueFamilyIndices queue_family_indices = findQueueFamilies(m_physical_device);
+
+		VkCommandPoolCreateInfo pool_info = {};
+		pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+		pool_info.flags = 0;
+
+		if (vkCreateCommandPool(m_logical_device, &pool_info,nullptr,
+				&m_command_pool) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create command pool!");
+		}
 	}
 
 	static vector<char> readFile(const string& filename) {
