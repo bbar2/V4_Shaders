@@ -139,6 +139,7 @@ private:  // members
 	vector<VkFramebuffer> m_swap_chain_framebuffers;
 
 	VkCommandPool m_command_pool;
+	vector<VkCommandBuffer> m_command_buffers;
 
 public:   // Methods
 
@@ -163,6 +164,8 @@ public:   // Methods
 		m_render_pass       = VK_NULL_HANDLE;
 		m_pipeline_layout   = VK_NULL_HANDLE;
 		m_graphics_pipeline = VK_NULL_HANDLE;
+
+		m_command_pool = VK_NULL_HANDLE;
 	}
 
 
@@ -197,6 +200,7 @@ private:    // methods
 		createGraphicsPipeline();
 		createFramebuffers();
 		createCommandPool();
+		createCommandBuffers();
 	}
 
 	void mainLoop() {
@@ -808,6 +812,7 @@ private:    // methods
 	}
 
 	void createFramebuffers(){
+		// one framebuffer for each image_view
 		m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
 
 		for (size_t i = 0; i < m_swap_chain_image_views.size(); i++) {
@@ -841,6 +846,23 @@ private:    // methods
 		if (vkCreateCommandPool(m_logical_device, &pool_info,nullptr,
 				&m_command_pool) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool!");
+		}
+	}
+
+	void createCommandBuffers(){
+		// One command buffer for each framebuffer (or for each image view)
+		m_command_buffers.resize(m_swap_chain_framebuffers.size());
+
+		// Allocate enough empty command buffers -- and put them in pool
+		VkCommandBufferAllocateInfo alloc_info = {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		alloc_info.commandPool = m_command_pool;
+		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		alloc_info.commandBufferCount = (uint32_t) m_command_buffers.size();
+
+		if (vkAllocateCommandBuffers(m_logical_device, &alloc_info,
+				m_command_buffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
 
