@@ -141,6 +141,9 @@ private:  // members
 	VkCommandPool m_command_pool;
 	vector<VkCommandBuffer> m_command_buffers;
 
+	VkSemaphore m_image_available_semaphore;
+	VkSemaphore m_render_finished_semaphore;
+
 public:   // Methods
 
 	/// constructor -
@@ -166,6 +169,9 @@ public:   // Methods
 		m_graphics_pipeline = VK_NULL_HANDLE;
 
 		m_command_pool = VK_NULL_HANDLE;
+
+		m_image_available_semaphore = VK_NULL_HANDLE;
+		m_render_finished_semaphore = VK_NULL_HANDLE;
 	}
 
 
@@ -201,15 +207,20 @@ private:    // methods
 		createFramebuffers();
 		createCommandPool();
 		createCommandBuffers();
+		createSemaphores();
 	}
 
 	void mainLoop() {
 		while (!glfwWindowShouldClose(m_window)){
 			glfwPollEvents();
+			drawFrame();
 		}
 	}
 
 	void cleanup(){
+
+		vkDestroySemaphore(m_logical_device, m_render_finished_semaphore, nullptr);
+		vkDestroySemaphore(m_logical_device, m_image_available_semaphore, nullptr);
 
 		vkDestroyCommandPool(m_logical_device, m_command_pool, nullptr);
 
@@ -864,6 +875,63 @@ private:    // methods
 				m_command_buffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
+
+		// Record command buffers
+		for (size_t i = 0; i < m_command_buffers.size(); i++)
+		{
+			VkCommandBufferBeginInfo begin_info = {};
+			begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			begin_info.flags = 0; // optional
+			begin_info.pInheritanceInfo = nullptr; // optional
+
+			if (vkBeginCommandBuffer(m_command_buffers[i], &begin_info) != VK_SUCCESS)
+			{
+				throw std::runtime_error("failed to begin recording command buffer!");
+			}
+
+			VkRenderPassBeginInfo render_pass_info = {};
+			render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			render_pass_info.renderPass = m_render_pass;
+			render_pass_info.framebuffer = m_swap_chain_framebuffers[i];
+			render_pass_info.renderArea.offset = {0, 0};
+			render_pass_info.renderArea.extent = m_swap_chain_extent;
+
+			VkClearValue clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
+			render_pass_info.clearValueCount = 1;
+			render_pass_info.pClearValues = &clear_color;
+
+			vkCmdBeginRenderPass(m_command_buffers[i],
+					&render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+			vkCmdBindPipeline(m_command_buffers[i],
+					VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
+
+			// 1000 lines later, command to draw the triangle
+			vkCmdDraw(m_command_buffers[i],
+					3, 1, 0, 0);
+
+			vkCmdEndRenderPass(m_command_buffers[i]);
+
+			if (vkEndCommandBuffer(m_command_buffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer!");
+			}
+		}
+	}
+
+	void createSemaphores(){
+		VkSemaphoreCreateInfo semaphore_info = {};
+		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		if (vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
+					&m_image_available_semaphore) != VK_SUCCESS ||
+				vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
+					&m_render_finished_semaphore) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create semaphores!");
+		}
+	}
+
+	void drawFrame(){
+
 	}
 
 	static vector<char> readFile(const string& filename) {
