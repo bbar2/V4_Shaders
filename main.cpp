@@ -30,6 +30,7 @@ using std::optional;
 const int SCALE = 2;
 const int WIDTH  = 800*SCALE;
 const int HEIGHT = 600*SCALE;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 // need char** (array of char*) for VkInstanceCreateInfo
 const vector<const char*> validation_layer_names = {
@@ -215,6 +216,8 @@ private:    // methods
 			glfwPollEvents();
 			drawFrame();
 		}
+
+		vkDeviceWaitIdle(m_logical_device);
 	}
 
 	void cleanup(){
@@ -656,6 +659,20 @@ private:    // methods
 		render_pass_info.subpassCount = 1;
 		render_pass_info.pSubpasses   = &subpass;
 
+		/// Subpass Dependencies - see location 297 in tutorial
+		/// Alternative to using VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+		VkSubpassDependency dependency = {};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.srcAccessMask = 0;
+		dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.dstAccessMask =
+				VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		render_pass_info.dependencyCount = 1;
+		render_pass_info.pDependencies = &dependency;
+
 		if (vkCreateRenderPass(
 				m_logical_device, &render_pass_info, nullptr, &m_render_pass) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
@@ -919,6 +936,7 @@ private:    // methods
 	}
 
 	void createSemaphores(){
+
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -931,7 +949,47 @@ private:    // methods
 	}
 
 	void drawFrame(){
+		// note vkxxxKHR name since swap chain is an extension.
+		uint32_t image_index;
+		vkAcquireNextImageKHR(m_logical_device,
+				m_swap_chain,                 // get image from this swap chain
+				UINT64_MAX,                   // disable nanosecond timeout timer
+				m_image_available_semaphore,  // this gets a signal when image is available
+				VK_NULL_HANDLE,         // unused fence
+				&image_index);                // use this output to pick correct command buffer
 
+		VkSubmitInfo submit_info = {};
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+		VkSemaphore wait_semaphores[]      = {m_image_available_semaphore};
+		VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+		submit_info.waitSemaphoreCount     = 1; // size of wait_semaphores and wait_stages
+		submit_info.pWaitSemaphores   = wait_semaphores;
+		submit_info.pWaitDstStageMask = wait_stages;
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &m_command_buffers[image_index];
+
+		VkSemaphore signal_semaphores[] = {m_render_finished_semaphore};
+		submit_info.signalSemaphoreCount = 1;
+		submit_info.pSignalSemaphores = signal_semaphores;
+
+		if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit draw command buffer!");
+		}
+
+		VkPresentInfoKHR present_info = {};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = 1;
+		present_info.pWaitSemaphores = signal_semaphores;
+
+		VkSwapchainKHR swap_chains[] = {m_swap_chain};
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = swap_chains;
+		present_info.pImageIndices = &image_index;
+		present_info.pResults = nullptr; // for multiple swap chains, else use return value
+
+		vkQueuePresentKHR(m_present_queue, &present_info);
+		vkQueueWaitIdle(m_present_queue); // inefficient synchronization.
 	}
 
 	static vector<char> readFile(const string& filename) {
