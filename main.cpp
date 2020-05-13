@@ -142,8 +142,11 @@ private:  // members
 	VkCommandPool m_command_pool;
 	vector<VkCommandBuffer> m_command_buffers;
 
-	VkSemaphore m_image_available_semaphore;
-	VkSemaphore m_render_finished_semaphore;
+	vector<VkSemaphore> m_image_available_semaphore; // GPU-GPU coordination
+	vector<VkSemaphore> m_render_finished_semaphore; // GPU-GPU coordination
+	vector<VkFence>     m_in_flight_fences;          // CPU-GPU coordination
+	vector<VkFence>     m_images_in_flight;          // CPU-GPU coordination
+	size_t m_current_frame;
 
 public:   // Methods
 
@@ -171,10 +174,8 @@ public:   // Methods
 
 		m_command_pool = VK_NULL_HANDLE;
 
-		m_image_available_semaphore = VK_NULL_HANDLE;
-		m_render_finished_semaphore = VK_NULL_HANDLE;
+		m_current_frame = 0;
 	}
-
 
 	void run() {
 		initWindow();
@@ -182,7 +183,6 @@ public:   // Methods
 		mainLoop();
 		cleanup();
 	}
-
 
 private:    // methods
 	void initWindow(){
@@ -208,7 +208,7 @@ private:    // methods
 		createFramebuffers();
 		createCommandPool();
 		createCommandBuffers();
-		createSemaphores();
+		createSyncObjects();
 	}
 
 	void mainLoop() {
@@ -222,8 +222,14 @@ private:    // methods
 
 	void cleanup(){
 
-		vkDestroySemaphore(m_logical_device, m_render_finished_semaphore, nullptr);
-		vkDestroySemaphore(m_logical_device, m_image_available_semaphore, nullptr);
+		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++){
+			vkDestroySemaphore(m_logical_device,
+					m_render_finished_semaphore[i], nullptr);
+			vkDestroySemaphore(m_logical_device,
+					m_image_available_semaphore[i], nullptr);
+			vkDestroyFence(m_logical_device,
+					m_in_flight_fences[i], nullptr);
+		}
 
 		vkDestroyCommandPool(m_logical_device, m_command_pool, nullptr);
 
@@ -935,33 +941,69 @@ private:    // methods
 		}
 	}
 
-	void createSemaphores(){
+	void createSyncObjects(){
+		m_image_available_semaphore.resize(MAX_FRAMES_IN_FLIGHT);
+		m_render_finished_semaphore.resize(MAX_FRAMES_IN_FLIGHT);
+		m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+		m_images_in_flight.resize(m_swap_chain_images.size(), VK_NULL_HANDLE);
 
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-		if (vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
-					&m_image_available_semaphore) != VK_SUCCESS ||
-				vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
-					&m_render_finished_semaphore) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create semaphores!");
+		VkFenceCreateInfo fence_info = {};
+		fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+			if (vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
+			                      &m_image_available_semaphore[i]) != VK_SUCCESS ||
+			    vkCreateSemaphore(m_logical_device, &semaphore_info, nullptr,
+			                      &m_render_finished_semaphore[i]) != VK_SUCCESS ||
+          vkCreateFence(m_logical_device, &fence_info, nullptr,
+          		              &m_in_flight_fences[i]) != VK_SUCCESS)
+			{
+				throw std::runtime_error("failed to create semaphores!");
+			}
 		}
 	}
 
 	void drawFrame(){
+		// CPU-GPU synchronization -
+		vkWaitForFences(m_logical_device,
+				1, &m_in_flight_fences[m_current_frame], VK_TRUE, UINT64_MAX);
+
 		// note vkxxxKHR name since swap chain is an extension.
 		uint32_t image_index;
 		vkAcquireNextImageKHR(m_logical_device,
 				m_swap_chain,                 // get image from this swap chain
 				UINT64_MAX,                   // disable nanosecond timeout timer
-				m_image_available_semaphore,  // this gets a signal when image is available
+				m_image_available_semaphore[m_current_frame],  // signaled when image available
 				VK_NULL_HANDLE,         // unused fence
 				&image_index);                // use this output to pick correct command buffer
+
+		// TODO get a better handle on the two fences,
+		//  - when each are signaled and reset.
+		//  - why is second fence required.
+		//  - how does second fence help if images get out of order?
+		//  - second fence is really copy of handle - how does this help
+		//  - does the handle copy ever get signaled or reset?
+
+		// Check if a previous frame is using this image
+		if(m_images_in_flight[image_index] != VK_NULL_HANDLE) {
+			vkWaitForFences(m_logical_device,
+					1, &m_images_in_flight[image_index], VK_TRUE, UINT64_MAX);
+		} else {
+			cout << "YES IT HAPPENS" << endl;
+		}
+
+		// Mark the image as now being used by this frame
+		m_images_in_flight[image_index] = m_in_flight_fences[m_current_frame];
 
 		VkSubmitInfo submit_info = {};
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-		VkSemaphore wait_semaphores[]      = {m_image_available_semaphore};
+		VkSemaphore wait_semaphores[]      = {m_image_available_semaphore[m_current_frame]};
 		VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 		submit_info.waitSemaphoreCount     = 1; // size of wait_semaphores and wait_stages
 		submit_info.pWaitSemaphores   = wait_semaphores;
@@ -969,11 +1011,13 @@ private:    // methods
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &m_command_buffers[image_index];
 
-		VkSemaphore signal_semaphores[] = {m_render_finished_semaphore};
+		VkSemaphore signal_semaphores[] = {m_render_finished_semaphore[m_current_frame]};
 		submit_info.signalSemaphoreCount = 1;
 		submit_info.pSignalSemaphores = signal_semaphores;
 
-		if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+		vkResetFences(m_logical_device, 1, &m_in_flight_fences[m_current_frame]);
+		if (vkQueueSubmit(m_graphics_queue, 1,
+				&submit_info, m_in_flight_fences[m_current_frame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
 
@@ -989,7 +1033,8 @@ private:    // methods
 		present_info.pResults = nullptr; // for multiple swap chains, else use return value
 
 		vkQueuePresentKHR(m_present_queue, &present_info);
-		vkQueueWaitIdle(m_present_queue); // inefficient synchronization.
+
+		m_current_frame = (m_current_frame + 1 ) % MAX_FRAMES_IN_FLIGHT;
 	}
 
 	static vector<char> readFile(const string& filename) {
