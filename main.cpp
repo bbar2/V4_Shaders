@@ -994,7 +994,7 @@ private:    // methods
 			vkWaitForFences(m_logical_device,
 					1, &m_images_in_flight[image_index], VK_TRUE, UINT64_MAX);
 		} else {
-			cout << "YES IT HAPPENS" << endl;
+			cout << "YES IT HAPPENS - prev frame was using the image" << endl;
 		}
 
 		// Mark the image as now being used by this frame
