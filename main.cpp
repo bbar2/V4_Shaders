@@ -7,9 +7,7 @@
 #include <cstdint>  // for UINT32_MAX
 #include <fstream>
 
-// trivial comment for 19 july 2020, linux build, github experiment
-
-// Now with edit of bbar2's file, by bbar-win - take 5
+// Try something different - create a new branch.
 
 #include <cstdlib>
 using std::cout;
