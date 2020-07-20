@@ -8,6 +8,9 @@
 #include <fstream>
 
 // trivial comment for 19 july 2020, linux build, github experiment
+
+// Now with edit of bbar2's file, by bbar-win
+
 #include <cstdlib>
 using std::cout;
 using std::endl;
